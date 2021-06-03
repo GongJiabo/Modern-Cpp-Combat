@@ -1,3 +1,8 @@
 {
-    "makefile.extensionOutputFolder": "./.vscode"
+    "files.associations": {
+        "iostream": "cpp",
+        "*.tcc": "cpp",
+        "ostream": "cpp",
+        "type_traits": "cpp"
+    }
 }
