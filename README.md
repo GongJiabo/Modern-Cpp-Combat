@@ -5,7 +5,9 @@
 
 #### 1、堆、栈、RAII：C++里该如何管理资源？
 
-**RAII（Resouce Acquisition Is Initialization）：**是 C++ 所特有的资源管理方式。有少量其他语言，如 D、Ada 和 Rust 也采纳了 RAII，但主流的编程语言中， C++是唯一一个依赖 RAII 来做资源管理的。
+##### **RAII（Resouce Acquisition Is Initialization）：**
+
+​	是 C++ 所特有的资源管理方式。有少量其他语言，如 D、Ada 和 Rust 也采纳了 RAII，但主流的编程语言中， C++是唯一一个依赖 RAII 来做资源管理的。
 
 ```c++
 // 工厂方法的简单演示（函数返回值为基类）
@@ -65,10 +67,6 @@ void foo()
     ...
 }
 ```
-
-
-
-
 
 在 new一个对象和 delete 一个指针时编译器需要干不少活的，它们大致可以如下翻译：
 
@@ -220,3 +218,364 @@ class smart_ptr
 - 如果数组较大的话，应该考虑vector. vector 有最大的灵活性和不错的性能。
 - 对于字符串数组，当然应该考虑string。
 - 如果数组大小固定(C 的数组在C++里体来就是大小固定的)并且较小的话，应该考虑array。array 保留了C数组在栈上分配的特点。同时，提供了begin、end、size等通用成员函数。
+
+#### 6、异常：用还是不用，这是个问题
+
+**异常的问题**：
+
+- 异常违反了“你不用管就不需要付出代价”的C++原则。只要开启了异常，即使不使用异常你编译出的二进制代码通常也会膨胀。（牺牲可执行文件的大小、提高主流程的性能）
+- 异常比较隐蔽，不容易看出来了哪些地方会发生异常和发生什么异常。（如果一个函数声明了不会抛出异常、结果却抛出了异常，C++运行时会调用std::terminate来终止应用程序）
+
+#### 7、迭代器和好用的新for循环
+
+**迭代器的类型关系：**
+
+![1-7.1](.\pic\1-7.1.png)
+
+迭代器通常是对象。但需要注意的是，指针可以满足上面所有的迭代器要求，因而也是迭代器。这应该并不让人惊讶，因为本来迭代器就是根据指针的特性，对其进行抽象的结果。事实上，vector的迭代器，在很多实现里就直接是使用指针的。
+
+**常见迭代器：**
+
+```c++
+#include <algorithm>	// std::copy
+#include <iterator>		// std::back_inserter
+#include <vector>		// std::vector
+#include <iostream>		// std::cout
+
+vector<int> v1{1, 2, 3, 4, 5};
+vector<int> v2;
+copy(v1.begin(), v1.end(), back_inserter(v2));		// {1, 2, 3, 4, 5}
+
+copy(v2.begin(), v2.end(), ostream_iterator<int>(cout, " "));	// 打印输出 1 2 3 4 5
+```
+
+**输入行迭代器：**
+
+- istream_line_reader
+
+```c++
+// 基于范围的for循环
+for (const string& line : istream_line_reader(is))
+{
+	// 示例循环体中仅进行简单输出
+    cout << line << endl;
+}
+
+// 使用传统循环
+{
+    auto&& r = istream_line_reader(is);
+    auto it = r.begin();
+    auto end = r.end();
+    for(; it != end; ++it)
+    {
+        const string& line = *it;
+        cout << line << endl;
+	}
+}
+```
+
+对比一下以传统的方式写的C++代码，其中需要照顾不少细节：
+
+```c++
+string line;
+for (;;)
+{
+	getline(is, line);
+	if(!is)
+		break;
+	cout << line << endl;
+}
+```
+
+从is读入输入行的逻辑，在前面的代码里一个语句就全部搞定了，在这儿用了5个语句...
+
+**定义输入行迭代器：**
+
+ 
+
+```c++
+class istream_line_reader
+{
+public:
+    class iterator		// 实现 InputIterator
+    {
+    public:
+        typedef prdiff_t difference_type;
+        typedef string value_type;
+        typedef const value_type* pointer;
+        typedef const value_type& referenc;
+        typedef input_iterator_tag iterator_category;
+        // ...
+	};
+    // ...
+};
+```
+
+​	仿照一般的容器，我们把迭代器定义为istream_line_reader的套嵌类。它里面的这**五个类型是必须定义**的（其他的泛型C++代码可能会用到这五个类型；之前标准库定义了一个可以继承的类模板std::iterator来产生这些类型定义，但这个类目前已经被废弃）。其中：
+
+- difference_type 是代表迭代器之间距离的类型，定义为ptrdiff_t只是标准做法（指针间差值的类型），对这个类型没有什么特别作用。
+- value_type 是迭代器指向的对象的类值类型，我们使用string，表示迭代器指向的是字符串。
+- pointer是迭代器指向的对象的指针类型，这儿就平淡无奇地定义为value_type的常指针了（我们可不希望别人来更改指针指向的内容）。
+- 类似的，reference是value_type的常引用。
+- iterator_category被定义为input_iterator_tag，标识这个迭代器的类型是input_iterator（输入迭代器）。
+
+```c++
+class istream_line_reader
+{
+public:
+    class iterator
+    {
+        // ...
+        iterator() noexcept : stream_(nullptr) {}
+        
+        explicit iterator(istream& is) : stream(&is)
+        {
+			++*this;
+		}
+        
+        // reference?
+        reference operator*() const noexcept
+        {
+            return line_;
+		}
+        
+        // pointer?
+        pointer operator->() const noexcept
+        {
+            return &line_;
+		}
+        
+        // 前缀自增符
+        iterator& operator++()
+        {
+            getline(*stream_, line_);
+            if(!*stream_)
+                stream_ = nullptr;
+            return *this;
+		}
+        
+        // 后缀自增符
+        iterator operator++(int)
+        {
+            iterator temp(*this);
+            ++*this;
+            return temp;
+		}
+        
+        bool operator==(const iterator& rhs) const noexcept
+        {
+            return stream_ == rhs.stream_;
+		}
+        
+        bool operator!=(const iterator& rhs) const noexcept
+        {
+            return !operator==(rhs);
+		}
+        
+    private:
+    	istream* stream_;
+    	string line;
+	};
+	// ....
+    
+   	istream_line_reader() noexcept : stream_(nullptr) {}
+    
+    explicit istream_line_reader(istream& is) noexcept : stream_(&is)
+    {
+        return iterator(*stream_);
+	}
+    
+    iterator begin()
+    {
+        return iterator(*stream_);
+	}
+    
+    iterator end() const noexcept
+    {
+        return iterator();
+	}
+    
+private:
+    istream* stream_;
+};
+```
+
+#### 8、易用性改进 I：自动类型推断和初始化
+
+##### **自动类型判断—auto：**
+
+​	auto并没有改变C++是**静态类型语言**这一实使用auto的变量(或函数返回值)的类型仍然是**编译时就确定了，只不过编译器能自动帮你填充而已。**
+
+历史累赘，模板函数中：
+
+```c++
+template <typename T>
+void foo(const T& container)
+{
+	for (typename T::const_iterator it = v.begin(), ..., ...)
+    // ...
+}
+```
+
+​	如果`begin`返回的类型不是该类型的`const_ iterator` 嵌套类型的话，那实际上不用自动类型推断就没法表达了。这还真不是假设。比如，如果我们的遍历函数要求支持C数组的话，不用自动类型推断的话，就只能使用两个不同的**重载**:
+
+```c++
+// 支持C数组
+template <typename T, std::size_t N>
+void foo(const T (&a)[N])
+{
+    typedef const T* ptr_t;
+    for(ptr_t it = a, end = a + N; it != end; ++it)
+    {
+        // 循环体...
+	}
+}
+
+template <typename T>
+void foo(const T& c)
+{
+    for(typename T::const_iterator it = c.begin(), end = c.end();
+       it != end; ++it)
+    {
+        // 循环体...
+	}
+}
+```
+
+如果使用类型推断的话，再加上 C++11提供的全局begin和end函数，上面的代码可以统一成：
+
+```c++
+template <typename T>
+void foo(const T& c)
+{
+    using std::begin;
+    using std::end;
+    // 使用依赖参数查找(ADL)
+    // begin、end函数参数可以是容器/数组指针
+    for(auto it = begin(c), ite = end(c); it!=end; ++it)
+    {
+        // 循环体...
+	}
+}
+```
+
+##### decltype—获得一个表达式的类型：
+
+- decltype(变量名)可以获得变量的精确类型
+- decltype(表达式)（表达式不是变量名，但包括decltype((变量名)）的情况）可以获得**表达式的引用类型**；除非表达式的结果是个**纯右值(prvalue)**，此时结果仍然是值类型。
+
+如果我们有 `int a;`那么：
+
+- decltype(a) 会获得`int`（因为a是int）
+
+- decltype((a))会获得`int&`（因为a是**lvalue**）
+- decltype(a + a)会获得`int`（因为a + a是**prvalue**）
+
+##### decltype(auto)：
+
+​	通常情况下，能写`auto`来声明变量肯定是比较轻松的事。但这儿有个限制，你需要在写下`auto`时就决定你写下的是个**引用类型**还是**值类型**。根据类型推导规则，`auto`是值类型，`auto&`是左值引用类型，`auto&&`是转发引用（可以是左值引用，也可以是右值引用）。使用`auto`不能通用地根据表达式类型来决定返回值的类型。不过，`decltype(expr)`既可以是值类型，也可以是引用类型。因此我们可以这么写：
+
+```c++
+decltype(expr) a = expr;
+
+// 对C++14
+decltype(auto) a = expr;
+```
+
+##### 函数返回值类型推断：
+
+​	从C++14开始，**函数的返回值**也可以用`auto`或`decltype(auto)`来声明了。同样的，用`auto`可以得到值类型，用`auto&`或者`auto&&`可以得到引用类型；而用`decltype(auto)`可以根据返回表达式通用地决定返回的是值类型还是引用类型。
+
+​	后置返回值类型声明：
+
+```c++
+auto foo(参数) -> 返回值类型声明
+{
+	// 函数体...
+}
+```
+
+类模板的模板参数推导
+
+```c++
+// pair
+pair<int, int> pr{1, 42};
+
+// make_pair
+auto pr = make_pair(1, 42);
+
+// C++17后，因为函数模板有模板参数推导(编译器根据构造函数来自动生成的)，使得调用者不必手工指定参数类型
+pair pr{1, 42};
+
+// array
+int a1[] = {1, 2, 3};
+array<int, 3> a2{1, 2, 3};	// 啰嗦
+// array<int> a3{1,2,3};	// 不行
+array a{1, 2, 3} 			// C++17
+
+```
+
+##### 结构化绑定：
+
+​	在讲关联容器中的时候有过这样的一个例子：
+
+```c++
+multimap<string, int>::iterator lower, upper;
+// 用两个变量来接收数值
+std::tie(lower, upper) = mmp.equal_range("four");
+// C++17简化为
+auto [lower, upper] = mmp.equal_range("four");
+```
+
+##### 统一初始化(uniform initialization)：
+
+​	在代码里使用了大括号{}来进行对象的初始化。这当然也是C++11引入的新语法梦够代替很多小括号（）在变量初始化时使用。
+
+**特点：当一个构造函数没有标成explicit时，你可以使用大括号不写类名来进行构造：**
+
+```c++
+Obj getObj()
+{	
+	return {1.0};
+}
+```
+
+​	如果Obj类可以使用浮点数进行构造的话，上面的写法就是合法的。如果有无参数、多参数的构造函数，也可以使用这个形式。除了形式上的区别，他跟`Obj(1.0)`的主要区别是，后者可以用来调用`Obj(int)`，而使用大括号时编译器会拒绝“窄”转换，不接受以`{1.0}`或者`Obj{1.0}`的形式调用构造函数`Obj(int)`。
+
+​	这个语法主要的限制是，如果一个构造函数**既有使用初始化列表的构造函数**，**又有不使用初始化列表的构造函数**，那编译器会**千方百计地试图调用使用初始化列表的构造函数**，导致各种意外。
+
+##### 类数据成员的默认初始化：
+
+​	按照C+ +98的语法，**数据成员可以在构造函数里进行初始化**。这本身不是问题，但实践中，如果数据成员比较多、构造函数又有多个的话，逐个去初始化是个累赘，且很容易在增加数据成员时漏掉在某个构造函数中进行初始化。为此，C++11 增加了一个语法，**允许在声明数据成员时直接给予一个初始化表达式**。这样，当且仅当构造函数的初始化列表中不包含该数据成员时，这个数据成员就会自动使用初始化表达式进行初始化。
+
+```c++
+class Complex
+{
+private:
+    float re_;
+    float im_;
+public:
+	Complex() : re_(0), im_(0) {}
+    Complex(float re) : re_(re), im_(0) {}
+    Complex(float re, float im) : re_(re), im_(im) {}
+    // ...
+};
+
+// 使用数据成员的默认初始化
+class Complex
+{
+private:
+	float re_{0};
+    float im_{0};
+public:
+    Complex() {}
+    Complex(float re) : re_(re) {}
+    Complex(float re, float im) : re_(re), im_(im) {}
+    // ...
+}
+```
+
+- 第一个构造函数没有任何初始化列表，所以类数据成员的初始化全部由**默认初始化**完成，`re`_和`im_`都是0。
+
+- 第二个构造函数提供了``re_`的初始化， `im_` 仍由默认初始化完成。
+- 第三个构造函数则完全不使用默认初始化。
