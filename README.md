@@ -579,3 +579,98 @@ public:
 
 - 第二个构造函数提供了``re_`的初始化， `im_` 仍由默认初始化完成。
 - 第三个构造函数则完全不使用默认初始化。
+
+#### 9、易用性改进 II：字面量、静态断言和成员函数说明符
+
+##### 自定义字面量
+
+```c++
+#include <chrono>
+#include <complex>
+#include <iostream>
+#include <string>
+#include <thread>
+
+using namespace std;
+
+static constexpr double factors[] =
+    {1.0, 1000.0, 1e-3, 1e-2, 0.0254, 0.3048, 0.9144, 1609.344};
+    
+struct length
+{
+    double value;
+    enum unit
+    {
+        metre,
+        kilometre,
+        millimetre,
+        centimetre,
+        inch,
+        foot,
+        yard,
+        mile
+    };
+
+    explicit length(double v, unit u = metre)
+    {
+        value = v * factors[u];
+    }
+};
+
+
+length operator+(length lhs, length rhs)
+{
+    return length(lhs.value + rhs.value);
+}
+
+length operator""   _m(long double v)
+{
+    return length(v, length::metre);
+}
+
+length operator"" _cm(long double v)
+{
+    return length(v, length::centimetre);
+}
+
+int main()
+{
+    // 虚数类
+    // 输出 i * i = (-1,0)
+    cout << "i * i = " << 1i * 1i << endl;
+    
+    // 自定义量
+    length m1(1.0, length::metre);
+    length m2 = m1 + 12.0_cm;
+    return 0;
+}
+```
+
+##### 二进制字面量
+
+十六进制： 0xffffffff
+
+八进制：     077777777
+
+c++14中的二进制直接的字面量：`unsigned mask = 0b11100000`
+
+##### 静态断言
+
+C++11直接从语言层面提供了**静态断言机制**，不仅能输出更好的信息，而且适用性也更好，可以直接放在类的定义中，而不像之前用的特殊技巧只能放在函数体里。
+
+```c++
+// staic_assert(编译期条件表达式, 可选输出信息);
+static_assert((alignment & (alignment - 1)) == 0, "Alignment must be power of two");
+```
+
+##### override和final说明符
+
+**override**显示声明了函数成员是一个虚函数且**覆盖了基类中的该函数**。如果有override声明的函数不是虚函数，或者基类中不存在这个虚函数，编译期会报告错误。这个说明符的主要作用有两个：
+
+- 给开发人员更明确的提示，这个函数覆写了基类的成员函数；
+
+- 让编译期进行额外的检查，放置程序员由于拼写错误或代码改动没有让基类和派生类中成员名称完全一致。
+
+**final**则声明了成员函数是一个虚函数，且该虚函数不可在派生类中覆盖。如果有一点没有得到满足的话，编译期就会报错。
+
+final还有给作用是标志某个类或结构不可被派生。同样，这时应将其放在被定义的类或结构名后面。
